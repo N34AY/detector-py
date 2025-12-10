@@ -1,0 +1,4 @@
+venv/
+training_videos/
+detections/
+detection_log.json
