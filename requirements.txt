@@ -1,12 +1,16 @@
+# Core Detection Dependencies
+opencv-python>=4.8.0
 ultralytics>=8.0.0
-opencv-python>=4.5.0
+numpy>=1.21.0
 torch>=1.9.0
 torchvision>=0.10.0
-numpy>=1.21.0
 Pillow>=8.2.0
+
+# Web Interface Dependencies
+flask>=2.3.0
+flask-socketio>=5.3.0
+python-socketio>=5.8.0
+
+# Utility Dependencies
 PyYAML>=5.4.1
 requests>=2.25.1
-matplotlib>=3.3.4
-seaborn>=0.11.1
-pandas>=1.3.0
-tqdm>=4.61.1
