@@ -14,3 +14,4 @@ python-socketio>=5.8.0
 # Utility Dependencies
 PyYAML>=5.4.1
 requests>=2.25.1
+python-dotenv>=1.0.0

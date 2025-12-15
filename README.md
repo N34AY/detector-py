@@ -1,81 +1,140 @@
-# Person Detection System
+# Motion Detection System 🎯
 
-A clean, modular person detection system with rain filtering and web interface.
+A modern, full-stack motion detection system with Vue 3 frontend, Flask backend, and advanced computer vision capabilities.
 
-## Features
+## ✨ Features
 
-🎯 **Core Detection**
-- YOLO-based person detection
-- Background subtraction motion detection
-- Advanced rain filtering to reduce false positives
+🎯 **Smart Motion Detection**
+- OpenCV-based background subtraction with MOG2
+- Advanced rain filtering to reduce false positives  
 - Multiple ROI (Region of Interest) support
-- Real-time motion smoothing
+- Configurable motion sensitivity and thresholds
+- Real-time motion status tracking
 
-🌐 **Web Interface**
-- Live camera feed streaming
-- Interactive ROI creation with mouse
-- Real-time motion sensitivity controls
-- Rain detection status indicators
-- Bootstrap-based responsive UI
+🌐 **Modern Web Interface**
+- Vue 3 + TypeScript + Vite frontend
+- Real-time camera feed streaming via WebSocket
+- Interactive ROI creation with click-and-drag
+- Live motion detection visualization
+- Responsive glassmorphism design
 
-⚡ **Performance**
-- Modular, clean architecture
-- Configurable detection parameters
-- Efficient OpenCV processing
-- WebSocket real-time updates
+🔊 **Smart Notifications**
+- Real-time sound alerts for motion detection
+- Configurable volume controls
+- Motion event tracking and statistics
 
-## Quick Start
+💤 **System Integration**
+- Cross-platform sleep prevention (macOS/Windows/Linux)
+- Auto-start sleep prevention with web interface
+- Background monitoring capabilities
 
-### 1. Setup Environment
+⚡ **Performance & Architecture**
+- Clean, modular Python backend with Flask-SocketIO
+- Modern TypeScript frontend with Pinia state management
+- Real-time WebSocket communication
+- Efficient OpenCV processing pipeline
+
+## 🚀 Quick Start
+
+### 1. Backend Setup
 
 ```bash
-# Create virtual environment
+# Create and activate virtual environment
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Run Web Interface
+### 2. Frontend Setup
 
 ```bash
-python start_web.py
+# Navigate to frontend directory
+cd web/frontend
+
+# Install Node.js dependencies
+npm install
 ```
 
-Then open http://localhost:5001 in your browser.
+### 3. Development Mode
 
-### 3. Run Command Line Interface
+**Option A: Full Stack Script (Recommended)**
+```bash
+# From project root, run both frontend and backend
+./start.sh
+```
+- Flask Backend: http://localhost:${WEB_PORT} (default: 5001)
+- Vue Frontend: http://localhost:${VITE_DEV_PORT} (default: 5173)
+
+**Option B: Separate Servers**
+```bash
+# Terminal 1: Start Flask backend
+cd web && python3 app.py
+
+# Terminal 2: Start Vue frontend  
+cd web/frontend && npm run dev
+```
+
+### 4. Production Build
 
 ```bash
-# Basic usage
-python main.py
+# Build and start production server
+./build.sh
+./start-prod.sh
+```🔧 Environment Configuration
 
-# Custom options
-python main.py --camera 1 --threshold 1000 --fullscreen
+This project uses environment variables for configuration. See [ENVIRONMENT.md](ENVIRONMENT.md) for detailed setup.
+
+```bash
+# Copy example environment file
+cp .env.example .env
+
+# Edit configuration as needed
+nano .env
 ```
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 detector-py/
-├── main.py                 # Standalone CLI detector
-├── start_web.py            # Web interface launcher
-├── requirements.txt        # Dependencies
+├── .env                   # Environment configuration
+├── .env.example           # Environment template
+├── build.sh               # Production build script
+├── start.sh               # Development server script
+├── start-prod.sh          # Production server script
+├── requirements.txt       # Python dependencies
+├── ENVIRONMENT.md         # Environment configuration docs
 ├── README.md              # This file
 ├── config/                # Configuration files
 │   └── rois.json          # Auto-saved ROI configurations
 ├── src/                   # Core detection modules
-│   ├── detector.py   # Clean detector implementation
+│   └── detector.py        # Clean detector implementation
 └── web/                   # Web application
-    ├── app.py             # Flask web server
-    ├── static/
-    │   └── app.js         # Clean frontend JavaScript
-    └── templates/
-        └── index.html     # Web interface HTML
+    ├── app.py             # Flask backend with WebSocket
+    └── frontend/          # Vue 3 + TypeScript frontend
+        ├── src/
+        │   ├── components/ # Vue components
+        │   ├── stores/     # Pinia state management
+        │   └── views/      # Vue pages
+        ├── package.json    # Node.js dependencies
+        └── vite.config.ts  # Vite configuration
 ```
 
-## Configuration
+## ⚙️ Configuration
+
+### Environment Variables
+
+The system uses environment variables for configuration. Key settings:
+
+- `ENV_MODE` - Application environment (development/production)
+- `WEB_HOST` - Flask server host (default: 0.0.0.0)
+- `WEB_PORT` - Flask server port (default: 5001)
+- `VITE_DEV_PORT` - Vue dev server port (default: 5173)
+- `DEFAULT_CAMERA_SOURCE` - Camera index (default: 0)
+- `LOG_LEVEL` - Logging level (default: INFO)
+
+See [ENVIRONMENT.md](ENVIRONMENT.md) for complete configuration options.
 
 ### Motion Detection Settings
 
@@ -84,31 +143,25 @@ detector-py/
 - **Min Contour Area**: Minimum size for valid motion contours (default: 1500)
 - **Motion Smoothing**: Frames required for motion confirmation (default: 3)
 
-### Web Interface Controls
+### Web Interface Features
 
-1. **Initialize System** - Load YOLO model and setup detector
-2. **Start/Stop Camera** - Control camera feed
-3. **ROI Management** - Create/delete detection zones
-4. **Motion Sensitivity** - Adjust detection parameters in real-time
-5. **Rain Detection** - Visual indicator when rain filtering is active
+1. **Auto-initialization** - System starts automatically when web app loads
+2. **Real-time Camera Feed** - Live video stream with WebSocket
+3. **Interactive ROI Management** - Create/edit detection zones with mouse
+4. **Motion Detection Visualization** - Live motion indicators on ROIs
+5. **System Statistics** - FPS, detection counts, and camera status
+6. **Modern UI** - Responsive glassmorphism design with Tailwind CSS
 
-## Usage Tips
+## 💡 Usage Tips
 
 ### Creating ROIs
-- **Web Interface**: Click and drag on camera feed
-- **CLI Interface**: Click and drag on OpenCV window
+- **Web Interface**: Click and drag on the camera feed to create detection zones
+- **Auto-loading**: ROIs are automatically saved and restored between sessions
 
-### Rain Filtering
-The system automatically detects rain patterns and reduces false positives by:
-- Analyzing contour sizes and quantities
-- Requiring consistent motion over multiple frames
-- Filtering out small, numerous motion areas
-
-### Keyboard Controls (CLI)
-- `q` - Quit
-- `r` - Clear all ROIs
-- `s` - Save ROIs to file
-- `l` - Load ROIs from file
+### Motion Detection
+- **Real-time Feedback**: Motion detected ROIs are highlighted in real-time
+- **Smart Filtering**: Advanced algorithms reduce false positives from rain/shadows
+- **Configurable Sensitivity**: Adjust detection parameters via environment variables
 
 ## Troubleshooting
 
@@ -118,37 +171,49 @@ The system automatically detects rain patterns and reduces false positives by:
 python -c "import cv2; cap = cv2.VideoCapture(0); print('Camera OK' if cap.isOpened() else 'Camera Failed')"
 ```
 
-### YOLO Model Download
-Models are downloaded automatically on first run. For manual download:
+### Dependencies
 ```bash
-python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
+# Reinstall Python dependencies
+pip install -r requirements.txt
+
+# Reinstall Node.js dependencies
+cd web/frontend && npm install
 ```
 
 ### Web Interface Not Loading
-1. Check if port 5001 is available
+1. Check if the configured port is available
+   ```bash
+   lsof -i :${WEB_PORT:-5001}
+   ```
 2. Ensure Flask-SocketIO is installed correctly
-3. Try running with different port: modify `WEB_PORT` in `web/app.py`
+3. Try running with different port: modify `WEB_PORT` in `.env`
 
-## Development
+## 🛠️ Development
 
 ### Adding New Features
-1. Core detection logic: Modify `src/detector.py`
-2. Web API endpoints: Add to `web/app.py`
-3. Frontend functionality: Update `web/static/app.js`
+1. **Core detection logic**: Modify `src/detector.py`
+2. **Backend API endpoints**: Add to `web/app.py`
+3. **Frontend components**: Create/modify Vue components in `web/frontend/src/components/`
+4. **State management**: Update Pinia stores in `web/frontend/src/stores/`
+5. **Styling**: Use Tailwind CSS classes or modify `web/frontend/src/style.css`
 
-### Code Structure
-- `DetectorConfig`: Configuration management
-- `PersonDetector`: Core detection logic with rain filtering
-- `WebDetector`: Web interface wrapper
-- `DetectorWebUI`: Frontend JavaScript class
+### Architecture
+- **Backend**: Flask + Flask-SocketIO for WebSocket communication
+- **Frontend**: Vue 3 + TypeScript + Vite + Pinia + Tailwind CSS
+- **Detection**: OpenCV MOG2 background subtraction with smart filtering
+- **Configuration**: Environment variables with .env file support
+- **Real-time**: WebSocket for live camera feed and motion detection updates
 
 ## License
 
 This project is open source. Feel free to modify and distribute.
 
-## Credits
+## 🙏 Credits
 
-- **YOLO**: Ultralytics YOLO for person detection
-- **OpenCV**: Computer vision processing
-- **Flask**: Web framework
-- **Bootstrap**: UI components
+- **OpenCV**: Computer vision processing and motion detection
+- **Flask**: Lightweight web framework with WebSocket support
+- **Vue 3**: Modern reactive frontend framework
+- **TypeScript**: Type-safe JavaScript development
+- **Vite**: Fast frontend build tool
+- **Tailwind CSS**: Utility-first CSS framework
+- **Socket.IO**: Real-time WebSocket communication

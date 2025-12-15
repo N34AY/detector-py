@@ -30,7 +30,7 @@ if __name__ == '__main__':
     try:
         # Start sleep prevention when web app starts
         start_global_sleep_prevention()
-        socketio.run(app, host=WEB_HOST, port=WEB_PORT, debug=False)
+        socketio.run(app, host=WEB_HOST, port=WEB_PORT, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         print("\n🛑 Server stopped by user")
     except Exception as e:

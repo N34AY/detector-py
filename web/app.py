@@ -10,12 +10,17 @@ import time
 import base64
 from datetime import datetime
 from pathlib import Path
+import os
 
 import cv2
 import numpy as np
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Import our clean detector
 import sys
@@ -28,19 +33,32 @@ sys.path.insert(0, str(parent_dir))
 
 from src.detector import MotionDetector, DetectorConfig
 
-# Web app configuration
-WEB_HOST = '0.0.0.0'
-WEB_PORT = 5001
-DEBUG_MODE = False
+# Web app configuration from environment variables
+WEB_HOST = os.getenv('WEB_HOST', '0.0.0.0')
+WEB_PORT = int(os.getenv('WEB_PORT', 5001))
+DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
+FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'detector_web_secret_2025')
+CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*')
+DEFAULT_CAMERA_SOURCE = int(os.getenv('DEFAULT_CAMERA_SOURCE', 0))
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+log_level = getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper())
+logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
 
+# Check if we're in production mode (static files present)
+PRODUCTION_MODE = os.getenv('ENV_MODE') == 'production' or Path(os.getenv('STATIC_FOLDER', 'frontend/dist')).exists()
+static_folder = os.getenv('STATIC_FOLDER', 'frontend/dist') if PRODUCTION_MODE else None
+static_url_path = os.getenv('STATIC_URL_PATH', '') if PRODUCTION_MODE else None
+
 # Initialize Flask app
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'detector_web_secret_2025'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+app = Flask(__name__, 
+           static_folder=static_folder,
+           static_url_path=static_url_path)
+app.config['SECRET_KEY'] = FLASK_SECRET_KEY
+socketio = SocketIO(app, cors_allowed_origins=CORS_ORIGINS, async_mode='threading')
+
+logger.info(f"Starting in {'PRODUCTION' if PRODUCTION_MODE else 'DEVELOPMENT'} mode")
 
 # Global sleep prevention for web app
 global_sleep_prevention = None
@@ -107,11 +125,14 @@ class WebDetector:
         if not cap.isOpened():
             logger.error("Failed to open camera")
             self.camera_active = False
+            self.stats['camera_status'] = 'disconnected'
+            socketio.emit('stats_update', self.stats)
             return
         
         self.stats['camera_status'] = 'connected'
         fps_counter = 0
         fps_start_time = time.time()
+        last_stats_emit = time.time()
         
         try:
             while self.camera_active:
@@ -125,18 +146,20 @@ class WebDetector:
                     results = self.detector.process_frame(frame)
                     
                     # Update stats
-                    if results['motion_detected']:
+                    motion_detected = results.get('motion_detected', False)
+                    if motion_detected:
                         self.stats['total_detections'] += 1
                         self.stats['last_detection_time'] = datetime.now().isoformat()
                     
-                    self.stats['rain_detected'] = results['rain_active']
+                    self.stats['rain_detected'] = results.get('rain_active', False)
                     self.stats['active_rois'] = len(self.detector.rois)
                     self.stats['motion_detected_rois'] = [
                         roi['id'] for roi in self.detector.rois 
                         if roi.get('motion_detected', False)
                     ]
+                    self.stats['camera_status'] = 'connected'  # Ensure status stays connected
                 
-                # Store frame for web interface (no overlay needed)
+                # Store frame for web interface
                 self.current_frame = frame
                 
                 # Calculate FPS
@@ -150,6 +173,13 @@ class WebDetector:
                 # Emit frame to web clients
                 self._emit_frame()
                 
+                # Emit stats update every 2 seconds or when motion detected
+                current_time = time.time()
+                if (current_time - last_stats_emit > 2.0 or 
+                    (self.detector and any(roi.get('motion_detected', False) for roi in self.detector.rois))):
+                    socketio.emit('stats_update', self.stats)
+                    last_stats_emit = current_time
+                
                 time.sleep(0.03)  # ~30 FPS
                 
         except Exception as e:
@@ -158,6 +188,7 @@ class WebDetector:
             cap.release()
             self.camera_active = False
             self.stats['camera_status'] = 'disconnected'
+            socketio.emit('stats_update', self.stats)
     
     def _emit_frame(self):
         """Emit frame to web clients"""
@@ -167,9 +198,9 @@ class WebDetector:
                                        [cv2.IMWRITE_JPEG_QUALITY, 85])
                 frame_data = base64.b64encode(buffer).decode('utf-8')
                 
+                # Emit frame update (just the image)
                 socketio.emit('frame_update', {
-                    'frame': frame_data,
-                    'stats': self.stats
+                    'frame': frame_data
                 })
         except Exception as e:
             logger.error(f"Failed to emit frame: {e}")
@@ -202,17 +233,51 @@ web_detector = WebDetector()
 @app.route('/')
 def index():
     """Main web interface"""
-    return render_template('index.html')
+    if PRODUCTION_MODE:
+        # Serve the built Vue.js app
+        return app.send_static_file('index.html')
+    else:
+        # Development mode - serve template or redirect to Vue dev server
+        return render_template('index.html')
+
+# Catch-all route for Vue.js router (production mode only)
+@app.route('/<path:path>')
+def serve_vue_app(path):
+    """Serve Vue.js app for any route (SPA routing)"""
+    if PRODUCTION_MODE:
+        # Try to serve the requested file first
+        try:
+            return app.send_static_file(path)
+        except:
+            # Fall back to index.html for SPA routing
+            return app.send_static_file('index.html')
+    else:
+        # In development, this should not be reached
+        return "Development mode - use Vue dev server", 404
 
 @app.route('/api/initialize', methods=['POST'])
 def api_initialize():
     """Initialize detection system"""
     try:
         data = request.json or {}
-        camera_source = data.get('camera_source', 0)
+        camera_source = data.get('camera_source', DEFAULT_CAMERA_SOURCE)
         
         success = web_detector.initialize(camera_source)
+        if success:
+            # Auto-start camera when initializing
+            web_detector.start_camera(camera_source)
         return jsonify({'success': success})
+    except Exception as e:
+        print(f"❌ Error in /api/initialize: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/stop', methods=['POST'])
+def api_stop():
+    """Stop detection system"""
+    try:
+        web_detector.stop_camera()
+        web_detector.detector = None
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -246,10 +311,140 @@ def api_camera_status():
         'roi_count': len(web_detector.get_roi_list())
     })
 
+@app.route('/api/status')
+def api_status():
+    """Get overall system status (Vue frontend expects this)"""
+    return jsonify({
+        'initialized': web_detector.detector is not None,
+        'stats': {
+            'camera_status': web_detector.stats['camera_status'],
+            'fps': web_detector.stats['fps'],
+            'total_detections': web_detector.stats['total_detections'],
+            'active_rois': web_detector.stats['active_rois'],
+            'motion_detected_rois': web_detector.stats['motion_detected_rois'],
+            'rain_detected': web_detector.stats['rain_detected']
+        }
+    })
+
+@app.route('/api/motion-config', methods=['GET', 'POST'])
+def api_motion_config_vue():
+    """Motion config endpoint for Vue frontend"""
+    try:
+        if request.method == 'POST':
+            data = request.json
+            if web_detector.detector:
+                config = web_detector.detector.config
+                
+                # Update configuration with Vue frontend field names
+                if 'threshold' in data:
+                    config.motion_threshold = data['threshold']
+                if 'min_area' in data:
+                    config.min_contour_area = data['min_area']
+                if 'blur_size' in data:
+                    config.blur_size = data['blur_size']
+                if 'rain_area_threshold' in data:
+                    config.rain_area_threshold = data['rain_area_threshold']
+                
+                return jsonify({'success': True, 'config': {
+                    'threshold': config.motion_threshold,
+                    'min_area': config.min_contour_area,
+                    'blur_size': getattr(config, 'blur_size', 21),
+                    'rain_area_threshold': getattr(config, 'rain_area_threshold', 5000)
+                }})
+            else:
+                return jsonify({'success': False, 'error': 'Detector not initialized'})
+        else:
+            # GET request
+            if web_detector.detector:
+                config = web_detector.detector.config
+                return jsonify({'config': {
+                    'threshold': config.motion_threshold,
+                    'min_area': config.min_contour_area,
+                    'blur_size': getattr(config, 'blur_size', 21),
+                    'rain_area_threshold': getattr(config, 'rain_area_threshold', 5000)
+                }})
+            else:
+                return jsonify({'config': {
+                    'threshold': 800,
+                    'min_area': 100,
+                    'blur_size': 21,
+                    'rain_area_threshold': 5000
+                }})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/rois')
 def api_get_rois():
     """Get all ROIs"""
     return jsonify({'rois': web_detector.get_roi_list()})
+
+@app.route('/api/rois', methods=['POST'])
+def api_add_roi_vue():
+    """Add new ROI (Vue frontend endpoint)"""
+    try:
+        data = request.json
+        x1, y1, x2, y2 = data['x1'], data['y1'], data['x2'], data['y2']
+        
+        if web_detector.detector:
+            success = web_detector.detector.add_roi(x1, y1, x2, y2)
+            if success:
+                web_detector.detector.save_rois()  # Auto-save
+            return jsonify({'success': success})
+        else:
+            return jsonify({'success': False, 'error': 'Detector not initialized'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/rois/<int:roi_id>', methods=['DELETE'])
+def api_delete_roi_vue(roi_id):
+    """Delete ROI by ID (Vue frontend endpoint)"""
+    try:
+        if web_detector.detector:
+            success = web_detector.detector.delete_roi(roi_id)
+            if success:
+                web_detector.detector.save_rois()  # Auto-save
+            return jsonify({'success': success})
+        else:
+            return jsonify({'success': False, 'error': 'Detector not initialized'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/rois/clear', methods=['DELETE'])
+def api_clear_rois_vue():
+    """Clear all ROIs (Vue frontend endpoint)"""
+    try:
+        if web_detector.detector:
+            web_detector.detector.clear_rois()
+            web_detector.detector.save_rois()  # Auto-save
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Detector not initialized'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/rois/save', methods=['POST'])
+def api_save_rois():
+    """Save ROIs to file"""
+    try:
+        if web_detector.detector:
+            success = web_detector.detector.save_rois()
+            return jsonify({'success': success})
+        else:
+            return jsonify({'success': False, 'error': 'Detector not initialized'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/rois/load', methods=['POST'])
+def api_load_rois():
+    """Load ROIs from file"""
+    try:
+        if web_detector.detector:
+            success = web_detector.detector.load_rois()
+            return jsonify({'success': success})
+        else:
+            return jsonify({'success': False, 'error': 'Detector not initialized'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/rois/add', methods=['POST'])
 def api_add_roi():
